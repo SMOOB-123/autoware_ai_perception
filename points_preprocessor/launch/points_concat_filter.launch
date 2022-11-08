@@ -1,13 +1,24 @@
 <!-- -->
 <launch>
-  <arg name="input_topics" default="[/points_alpha, /points_beta]" />
+  <!-- <arg name="input_topics" default="[/carla/ego_vehicle/lidar1, /carla/ego_vehicle/lidar2]" />
   <arg name="output_topic" default="/points_concat" />
-  <arg name="output_frame_id" default="velodyne" />
+  <arg name="output_frame_id" default="ego_vehicle" />
 
   <node pkg="points_preprocessor" type="points_concat_filter"
         name="points_concat_filter" output="screen">
     <param name="output_frame_id" value="$(arg output_frame_id)" />
     <param name="input_topics" value="$(arg input_topics)" />
     <remap from="/points_concat" to="$(arg output_topic)" />
+  </node> -->
+  <arg name="input_topics" default="[/forward_center_fused, /left_fused, /right_fused]" />
+  <arg name="output_topic" default="/points_raw" />
+  <arg name="output_frame_id" default="ego_vehicle" />
+
+  <node pkg="points_preprocessor" type="points_concat_filter_rgb"
+        name="points_concat_filter" output="screen">
+    <param name="output_frame_id" value="$(arg output_frame_id)" />
+    <param name="input_topics" value="$(arg input_topics)" />
+    <remap from="/points_concat" to="$(arg output_topic)" />
   </node>
 </launch>
+

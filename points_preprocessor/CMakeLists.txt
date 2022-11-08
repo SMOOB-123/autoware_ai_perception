@@ -128,6 +128,23 @@ target_link_libraries(points_concat_filter
 
 add_dependencies(points_concat_filter ${catkin_EXPORTED_TARGETS})
 
+# Points Concat filter RGB
+add_executable(points_concat_filter_rgb
+  nodes/points_concat_filter/points_concat_filter_rgb.cpp
+)
+
+target_include_directories(points_concat_filter_rgb PRIVATE
+  ${PCL_INCLUDE_DIRS}
+)
+
+target_link_libraries(points_concat_filter_rgb
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+  ${YAML_CPP_LIBRARIES}
+)
+
+add_dependencies(points_concat_filter_rgb ${catkin_EXPORTED_TARGETS})
+
 #Cloud Transformer
 add_executable(cloud_transformer
   nodes/cloud_transformer/cloud_transformer_node.cpp
@@ -180,6 +197,7 @@ install(
   TARGETS
     cloud_transformer
     points_concat_filter
+    points_concat_filter_rgb
     ray_ground_filter_lib
     ray_ground_filter
     ring_ground_filter
