@@ -32,6 +32,7 @@ public:
   int getRealIterations();
 
   /* Set the input map points */
+  void setInputTarget(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input);
   void setInputTarget(pcl::PointCloud<pcl::PointXYZI>::Ptr input);
   void setInputTarget(pcl::PointCloud<pcl::PointXYZ>::Ptr input);
 

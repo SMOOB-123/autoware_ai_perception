@@ -116,6 +116,18 @@ double GNormalDistributionsTransform::auxilaryFunction_dPsiMT(double g_a, double
   return (g_a - mu * g_0);
 }
 
+void GNormalDistributionsTransform::setInputTarget(pcl::PointCloud<pcl::PointXYZRGB>::Ptr input)
+{
+	// Copy input map data from the host memory to the GPU memory
+	GRegistration::setInputTarget(input);
+
+	// Build the voxel grid
+	if (target_points_number_ != 0) {
+		voxel_grid_.setLeafSize(resolution_, resolution_, resolution_);
+		voxel_grid_.setInput(target_x_, target_y_, target_z_, target_points_number_);
+	}
+}
+
 void GNormalDistributionsTransform::setInputTarget(pcl::PointCloud<pcl::PointXYZI>::Ptr input)
 {
 	// Copy input map data from the host memory to the GPU memory
