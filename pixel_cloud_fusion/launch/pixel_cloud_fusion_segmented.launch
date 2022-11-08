@@ -1,0 +1,92 @@
+<launch>
+    <arg name="leaf_size" default="0.01" />
+    <param name="/use_sim_time" value="true" />
+
+        <!-- <node name="voxel_grid"
+            pkg="nodelet" type="nodelet"
+            args="standalone pcl/VoxelGrid">
+            <remap from="~input" to="forward_center_fused" />
+            <rosparam subst_value="true">
+              filter_field_name: ''
+              leaf_size: $(arg leaf_size)
+            </rosparam>
+        </node> -->
+
+    <node name="forward_center_autoware_image_rectifier" pkg="image_processor" type="image_rectifier" output="screen">
+        <param name="image_src" value="/carla/ego_vehicle/semantic_segmentation_front/image" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/semantic_segmentation_front/camera_info" />
+        <remap from="image_rectified" to="/forward_center_pixel_cloud_fusion/forward_center_rect" />
+    </node>
+    <node name="forward_center_pixel_cloud_fusion" pkg="pixel_cloud_fusion" type="pixel_cloud_fusion" output="screen">
+        <param name="points_src" value="/points_concat" />
+        <param name="image_src" value="forward_center_rect" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/semantic_segmentation_front/camera_info" />
+        <remap from="points_fused" to="forward_center_fused" />
+    </node>
+
+
+    <node name="left_autoware_image_rectifier" pkg="image_processor" type="image_rectifier" output="screen">
+        <param name="image_src" value="/carla/ego_vehicle/semantic_segmentation_front2/image" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/semantic_segmentation_front2/camera_info" />
+        <remap from="image_rectified" to="/left_pixel_cloud_fusion/left_rect" />
+    </node>
+    <node name="left_pixel_cloud_fusion" pkg="pixel_cloud_fusion" type="pixel_cloud_fusion" output="screen">
+        <param name="points_src" value="/points_concat" />
+        <param name="image_src" value="left_rect" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/semantic_segmentation_front2/camera_info" />
+        <remap from="/points_fused" to="/left_fused" />
+    </node>
+
+    <node name="right_autoware_image_rectifier" pkg="image_processor" type="image_rectifier" output="screen">
+        <param name="image_src" value="/carla/ego_vehicle/semantic_segmentation_front3/image" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/semantic_segmentation_front3/camera_info" />
+    <remap from="image_rectified" to="/right_pixel_cloud_fusion/right_rect" />
+    </node>
+    <node name="right_pixel_cloud_fusion" pkg="pixel_cloud_fusion" type="pixel_cloud_fusion" output="screen">
+        <param name="points_src" value="/points_concat" />
+        <param name="image_src" value="right_rect" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/semantic_segmentation_front3/camera_info" />
+        <remap from="/points_fused" to="/right_fused" />
+    </node>
+
+    <!-- 
+    <node name="rear_center_autoware_image_rectifier" pkg="image_processor" type="image_rectifier" output="screen">
+        <param name="image_src" value="/carla/ego_vehicle/rear_center/image" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/rear_center/camera_info" />
+        <remap from="image_rectified" to="rear_center_rect" />
+    </node>
+
+    <node name="rear_center_pixel_cloud_fusion" pkg="pixel_cloud_fusion" type="pixel_cloud_fusion" output="screen">
+        <param name="points_src" value="/points_raw" />
+        <param name="image_src" value="rear_center_rect" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/rear_center/camera_info" />
+        <remap from="/points_fused" to="/rear_center_fused" />
+    </node>
+
+    <node name="rear_left_autoware_image_rectifier" pkg="image_processor" type="image_rectifier" output="screen">
+        <param name="image_src" value="/carla/ego_vehicle/rear_left/image" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/rear_left/camera_info" />
+        <remap from="image_rectified" to="rear_left_rect" />
+    </node>
+
+    <node name="rear_left_pixel_cloud_fusion" pkg="pixel_cloud_fusion" type="pixel_cloud_fusion" output="screen">
+        <param name="points_src" value="/points_raw" />
+        <param name="image_src" value="rear_left_rect" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/rear_left/camera_info" />
+        <remap from="/points_fused" to="/rear_left_fused" />
+    </node>
+
+    <node name="rear_right_autoware_image_rectifier" pkg="image_processor" type="image_rectifier" output="screen">
+        <param name="image_src" value="/carla/ego_vehicle/rear_right/image" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/rear_right/camera_info" />
+        <remap from="image_rectified" to="rear_right_rect" />
+    </node>
+
+    <node name="rear_right_pixel_cloud_fusion" pkg="pixel_cloud_fusion" type="pixel_cloud_fusion" output="screen">
+        <param name="points_src" value="/points_raw" />
+        <param name="image_src" value="rear_right_rect" />
+        <param name="camera_info_src" value="/carla/ego_vehicle/rear_right/camera_info" />
+        <remap from="/points_fused" to="/rear_right_fused" />
+    </node>
+ -->
+</launch>
