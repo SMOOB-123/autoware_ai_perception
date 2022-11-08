@@ -38,13 +38,12 @@
 
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_datatypes.h>
-#include <tf/transform_listener.h>
-#include <tf_conversions/tf_eigen.h>
 
 #include <pcl/io/io.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_types_conversion.h>
 
 #include <ndt_cpu/NormalDistributionsTransform.h>
 #include <pcl/registration/ndt.h>
@@ -102,15 +101,16 @@ static double current_velocity_imu_x = 0.0;
 static double current_velocity_imu_y = 0.0;
 static double current_velocity_imu_z = 0.0;
 
-static pcl::PointCloud<pcl::PointXYZI> map;
+static pcl::PointCloud<pcl::PointXYZRGB> map;
+static pcl::PointCloud<pcl::PointXYZI> anh_map;
 
-static pcl::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> ndt;
+static pcl::NormalDistributionsTransform<pcl::PointXYZRGB, pcl::PointXYZRGB> ndt;
 static cpu::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> anh_ndt;
 #ifdef CUDA_FOUND
 static gpu::GNormalDistributionsTransform anh_gpu_ndt;
 #endif
 #ifdef USE_PCL_OPENMP
-static pcl_omp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI> omp_ndt;
+static pcl_omp::NormalDistributionsTransform<pcl::PointXYZRGB, pcl::PointXYZRGB> omp_ndt;
 #endif
 
 // Default values
@@ -142,6 +142,7 @@ static double min_scan_range = 5.0;
 static double max_scan_range = 200.0;
 static double min_add_scan_shift = 1.0;
 
+static double _tf_x, _tf_y, _tf_z, _tf_roll, _tf_pitch, _tf_yaw;
 static Eigen::Matrix4f tf_btol, tf_ltob;
 
 static bool _use_imu = false;
@@ -193,8 +194,8 @@ static void output_callback(const autoware_config_msgs::ConfigNDTMappingOutput::
   std::cout << "filter_res: " << filter_res << std::endl;
   std::cout << "filename: " << filename << std::endl;
 
-  pcl::PointCloud<pcl::PointXYZI>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZI>(map));
-  pcl::PointCloud<pcl::PointXYZI>::Ptr map_filtered(new pcl::PointCloud<pcl::PointXYZI>());
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZRGB>(map));
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr map_filtered(new pcl::PointCloud<pcl::PointXYZRGB>());
   map_ptr->header.frame_id = "map";
   map_filtered->header.frame_id = "map";
   sensor_msgs::PointCloud2::Ptr map_msg_ptr(new sensor_msgs::PointCloud2);
@@ -207,7 +208,7 @@ static void output_callback(const autoware_config_msgs::ConfigNDTMappingOutput::
   }
   else
   {
-    pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter;
+    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid_filter;
     voxel_grid_filter.setLeafSize(filter_res, filter_res, filter_res);
     voxel_grid_filter.setInputCloud(map_ptr);
     voxel_grid_filter.filter(*map_filtered);
@@ -369,15 +370,10 @@ static double calcDiffForRadian(const double lhs_rad, const double rhs_rad)
 }
 static void odom_callback(const nav_msgs::Odometry::ConstPtr& input)
 {
+  // std::cout << __func__ << std::endl;
+
   odom = *input;
   odom_calc(input->header.stamp);
-}
-
-static void vehicle_twist_callback(const geometry_msgs::TwistStampedConstPtr& msg)
-{
-  odom.header = msg->header;
-  odom.twist.twist = msg->twist;
-  odom_calc(odom.header.stamp);
 }
 
 static void imuUpsideDown(const sensor_msgs::Imu::Ptr input)
@@ -459,10 +455,10 @@ static void imu_callback(const sensor_msgs::Imu::Ptr& input)
 static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 {
   double r;
-  pcl::PointXYZI p;
-  pcl::PointCloud<pcl::PointXYZI> tmp, scan;
-  pcl::PointCloud<pcl::PointXYZI>::Ptr filtered_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>());
-  pcl::PointCloud<pcl::PointXYZI>::Ptr transformed_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+  pcl::PointXYZRGB p;
+  pcl::PointCloud<pcl::PointXYZRGB> tmp, scan;
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_scan_ptr(new pcl::PointCloud<pcl::PointXYZRGB>());
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed_scan_ptr(new pcl::PointCloud<pcl::PointXYZRGB>());
   tf::Quaternion q;
 
   Eigen::Matrix4f t_localizer(Eigen::Matrix4f::Identity());
@@ -474,12 +470,14 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
   pcl::fromROSMsg(*input, tmp);
 
-  for (pcl::PointCloud<pcl::PointXYZI>::const_iterator item = tmp.begin(); item != tmp.end(); item++)
+  for (pcl::PointCloud<pcl::PointXYZRGB>::const_iterator item = tmp.begin(); item != tmp.end(); item++)
   {
     p.x = (double)item->x;
     p.y = (double)item->y;
     p.z = (double)item->z;
-    p.intensity = (double)item->intensity;
+    p.r = (double)item->r;
+    p.g = (double)item->g;
+    p.b = (double)item->b;
 
     r = sqrt(pow(p.x, 2.0) + pow(p.y, 2.0));
     if (min_scan_range < r && r < max_scan_range)
@@ -488,7 +486,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     }
   }
 
-  pcl::PointCloud<pcl::PointXYZI>::Ptr scan_ptr(new pcl::PointCloud<pcl::PointXYZI>(scan));
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr scan_ptr(new pcl::PointCloud<pcl::PointXYZRGB>(scan));
 
   // Add initial point cloud to velodyne_map
   if (initial_scan_loaded == 0)
@@ -499,12 +497,18 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
   }
 
   // Apply voxelgrid filter
-  pcl::VoxelGrid<pcl::PointXYZI> voxel_grid_filter;
+  pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid_filter;
   voxel_grid_filter.setLeafSize(voxel_leaf_size, voxel_leaf_size, voxel_leaf_size);
   voxel_grid_filter.setInputCloud(scan_ptr);
   voxel_grid_filter.filter(*filtered_scan_ptr);
 
-  pcl::PointCloud<pcl::PointXYZI>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZI>(map));
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr map_ptr(new pcl::PointCloud<pcl::PointXYZRGB>(map));
+  pcl::PointCloud<pcl::PointXYZI>::Ptr anh_map_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+  if (_method_type == MethodType::PCL_ANH)
+  {
+    pcl::PointCloudXYZRGBtoXYZI(map, *anh_map_ptr);
+    anh_map = *anh_map_ptr;
+  }
 
   if (_method_type == MethodType::PCL_GENERIC)
   {
@@ -520,7 +524,9 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     anh_ndt.setStepSize(step_size);
     anh_ndt.setResolution(ndt_res);
     anh_ndt.setMaximumIterations(max_iter);
-    anh_ndt.setInputSource(filtered_scan_ptr);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr anh_filtered_scan_ptr(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::PointCloudXYZRGBtoXYZI(*filtered_scan_ptr, *anh_filtered_scan_ptr);
+    anh_ndt.setInputSource(anh_filtered_scan_ptr);
   }
 #ifdef CUDA_FOUND
   else if (_method_type == MethodType::PCL_ANH_GPU)
@@ -549,7 +555,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
     if (_method_type == MethodType::PCL_GENERIC)
       ndt.setInputTarget(map_ptr);
     else if (_method_type == MethodType::PCL_ANH)
-      anh_ndt.setInputTarget(map_ptr);
+      anh_ndt.setInputTarget(anh_map_ptr);
 #ifdef CUDA_FOUND
     else if (_method_type == MethodType::PCL_ANH_GPU)
       anh_gpu_ndt.setInputTarget(map_ptr);
@@ -599,7 +605,7 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
 
   t4_start = ros::Time::now();
 
-  pcl::PointCloud<pcl::PointXYZI>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
 
   if (_method_type == MethodType::PCL_GENERIC)
   {
@@ -769,10 +775,10 @@ static void points_callback(const sensor_msgs::PointCloud2::ConstPtr& input)
       ndt.setInputTarget(map_ptr);
     else if (_method_type == MethodType::PCL_ANH)
     {
-      if (_incremental_voxel_update == true)
-        anh_ndt.updateVoxelGrid(transformed_scan_ptr);
-      else
-        anh_ndt.setInputTarget(map_ptr);
+      // if (_incremental_voxel_update == true)
+      //   anh_ndt.updateVoxelGrid(transformed_scan_ptr);
+      // else
+        anh_ndt.setInputTarget(anh_map_ptr);
     }
 #ifdef CUDA_FOUND
     else if (_method_type == MethodType::PCL_ANH_GPU)
@@ -977,78 +983,39 @@ int main(int argc, char** argv)
   std::cout << "imu_topic: " << _imu_topic << std::endl;
   std::cout << "incremental_voxel_update: " << _incremental_voxel_update << std::endl;
 
-  std::string lidar_frame;
-  nh.param("localizer", lidar_frame, std::string("lidar"));
-  tf::TransformListener tf_listener;
-  tf::StampedTransform tf_baselink2primarylidar;
-  bool received_tf = true;
-
-  // 1. Try getting base_link -> lidar TF from TF tree
-  try
+  if (nh.getParam("tf_x", _tf_x) == false)
   {
-    tf_listener.waitForTransform("base_link", lidar_frame, ros::Time(), ros::Duration(1.0));
-    tf_listener.lookupTransform("base_link", lidar_frame, ros::Time(), tf_baselink2primarylidar);
-  }
-  catch (tf::TransformException& ex)
-  {
-    ROS_WARN("Query base_link to primary lidar frame through TF tree failed: %s", ex.what());
-    received_tf = false;
-  }
-
-  // 2. Try getting base_link -> lidar TF from tf_baselink2primarylidar param
-  if (!received_tf)
-  {
-    std::vector<double> bl2pl_vec;
-    if (nh.getParam("tf_baselink2primarylidar", bl2pl_vec) && bl2pl_vec.size() == 6)
-    {
-      tf::Vector3 trans(bl2pl_vec[0], bl2pl_vec[1], bl2pl_vec[2]);
-      tf::Quaternion quat;
-      quat.setRPY(bl2pl_vec[5], bl2pl_vec[4], bl2pl_vec[3]);
-      tf_baselink2primarylidar.setOrigin(trans);
-      tf_baselink2primarylidar.setRotation(quat);
-
-      received_tf = true;
-    }
-    else
-    {
-      ROS_WARN("Query base_link to primary lidar frame through tf_baselink2primarylidar param failed");
-    }
-  }
-
-  // 3. Try getting base_link -> lidar TF from tf_* params
-  if (!received_tf)
-  {
-    float tf_x, tf_y, tf_z, tf_roll, tf_pitch, tf_yaw;
-    if (nh.getParam("tf_x", tf_x) &&
-        nh.getParam("tf_y", tf_y) &&
-        nh.getParam("tf_z", tf_z) &&
-        nh.getParam("tf_roll", tf_roll) &&
-        nh.getParam("tf_pitch", tf_pitch) &&
-        nh.getParam("tf_yaw", tf_yaw))
-    {
-      tf::Vector3 trans(tf_x, tf_y, tf_z);
-      tf::Quaternion quat;
-      quat.setRPY(tf_roll, tf_pitch, tf_yaw);
-      tf_baselink2primarylidar.setOrigin(trans);
-      tf_baselink2primarylidar.setRotation(quat);
-
-      received_tf = true;
-    }
-    else
-    {
-      ROS_WARN("Query base_link to primary lidar frame through tf_* params failed");
-    }
-  }
-
-  if (received_tf)
-  {
-    ROS_INFO("base_link to primary lidar transform queried successfully");
-  }
-  else
-  {
-    ROS_ERROR("Failed to query base_link to primary lidar transform");
+    std::cout << "tf_x is not set." << std::endl;
     return 1;
   }
+  if (nh.getParam("tf_y", _tf_y) == false)
+  {
+    std::cout << "tf_y is not set." << std::endl;
+    return 1;
+  }
+  if (nh.getParam("tf_z", _tf_z) == false)
+  {
+    std::cout << "tf_z is not set." << std::endl;
+    return 1;
+  }
+  if (nh.getParam("tf_roll", _tf_roll) == false)
+  {
+    std::cout << "tf_roll is not set." << std::endl;
+    return 1;
+  }
+  if (nh.getParam("tf_pitch", _tf_pitch) == false)
+  {
+    std::cout << "tf_pitch is not set." << std::endl;
+    return 1;
+  }
+  if (nh.getParam("tf_yaw", _tf_yaw) == false)
+  {
+    std::cout << "tf_yaw is not set." << std::endl;
+    return 1;
+  }
+
+  std::cout << "(tf_x,tf_y,tf_z,tf_roll,tf_pitch,tf_yaw): (" << _tf_x << ", " << _tf_y << ", " << _tf_z << ", "
+            << _tf_roll << ", " << _tf_pitch << ", " << _tf_yaw << ")" << std::endl;
 
 #ifndef CUDA_FOUND
   if (_method_type == MethodType::PCL_ANH_GPU)
@@ -1069,6 +1036,13 @@ int main(int argc, char** argv)
   }
 #endif
 
+  Eigen::Translation3f tl_btol(_tf_x, _tf_y, _tf_z);                 // tl: translation
+  Eigen::AngleAxisf rot_x_btol(_tf_roll, Eigen::Vector3f::UnitX());  // rot: rotation
+  Eigen::AngleAxisf rot_y_btol(_tf_pitch, Eigen::Vector3f::UnitY());
+  Eigen::AngleAxisf rot_z_btol(_tf_yaw, Eigen::Vector3f::UnitZ());
+  tf_btol = (tl_btol * rot_z_btol * rot_y_btol * rot_x_btol).matrix();
+  tf_ltob = tf_btol.inverse();
+
   map.header.frame_id = "map";
 
   ndt_map_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt_map", 1000);
@@ -1077,9 +1051,8 @@ int main(int argc, char** argv)
   ros::Subscriber param_sub = nh.subscribe("config/ndt_mapping", 10, param_callback);
   ros::Subscriber output_sub = nh.subscribe("config/ndt_mapping_output", 10, output_callback);
   ros::Subscriber points_sub = nh.subscribe("points_raw", 100000, points_callback);
-  ros::Subscriber odom_sub = nh.subscribe("vehicle/odom", 100000, odom_callback);
+  ros::Subscriber odom_sub = nh.subscribe("/vehicle/odom", 100000, odom_callback);
   ros::Subscriber imu_sub = nh.subscribe(_imu_topic, 100000, imu_callback);
-  ros::Subscriber twist_sub = nh.subscribe("vehicle/twist", 100000, vehicle_twist_callback);
 
   ros::spin();
 
